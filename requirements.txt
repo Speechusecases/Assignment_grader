@@ -1,0 +1,38 @@
+# Requirements for Submission Parser Scripts
+# Install with: pip install -r requirements.txt
+
+# For parse_jupyter_html.py
+# Parses Jupyter Notebook HTML exports
+beautifulsoup4>=4.12.0
+lxml>=4.9.0  # Optional but recommended parser for BeautifulSoup
+
+# For parse_pdf_submission.py
+# Parses PDF submissions (business reports, slide decks)
+pdfplumber>=0.10.0
+PyMuPDF>=1.23.0  # Also known as 'fitz' - for extracting embedded images from PDFs
+Pillow>=10.0.0   # Also known as 'PIL' - for image processing
+
+# For langraph_evaluator_agent.py
+# LangGraph and Anthropic Claude via Azure Foundry for AI-powered evaluation
+langgraph>=0.2.0
+langchain>=0.3.0
+langchain-core>=0.3.0
+langchain-anthropic>=0.3.0  # For Anthropic Claude models via Azure Foundry
+anthropic>=0.40.0           # Anthropic SDK (required by langchain-anthropic)
+python-dotenv>=1.0.0        # For loading .env file
+requests>=2.31.0            # For connectivity checks
+typing-extensions>=4.8.0
+httpx>=0.27.0               # HTTP client for Azure API calls
+
+# For FastAPI Backend (Recommended)
+fastapi>=0.115.0
+uvicorn>=0.32.0
+
+# For Gradio UI
+gradio>=5.0.0
+
+# For Streamlit UI
+streamlit>=1.40.0
+
+# Common utilities
+python-multipart>=0.0.5  # For file uploads
