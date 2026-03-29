@@ -13,12 +13,12 @@ PyMuPDF>=1.23.0  # Also known as 'fitz' - for extracting embedded images from PD
 Pillow>=10.0.0   # Also known as 'PIL' - for image processing
 
 # For langraph_evaluator_agent.py
-# LangGraph and Anthropic Claude via Azure Foundry for AI-powered evaluation
+# LangGraph and Azure OpenAI for AI-powered evaluation
 langgraph>=0.2.0
 langchain>=0.3.0
 langchain-core>=0.3.0
-langchain-anthropic>=0.3.0  # For Anthropic Claude models via Azure Foundry
-anthropic>=0.40.0           # Anthropic SDK (required by langchain-anthropic)
+langchain-openai>=0.1.0     # For Azure OpenAI models
+openai>=1.0.0               # OpenAI SDK (required by langchain-openai)
 python-dotenv>=1.0.0        # For loading .env file
 requests>=2.31.0            # For connectivity checks
 typing-extensions>=4.8.0

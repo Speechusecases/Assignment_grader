@@ -13,10 +13,10 @@ def example_single_evaluation():
     """Example: Evaluate a single submission."""
 
     # Evaluate an HTML notebook submission
-    # Note: Ensure AZURE_FOUNDRY_ENDPOINT and AZURE_FOUNDRY_API_KEY are set
+    # Note: Ensure AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY are set
     results = run_evaluation(
         file_path="AnothercopyofAIML_ML_Project_Full_Code_Notebook.html",
-        model="claude-3-5-sonnet-20241022",  # Claude model via Azure Foundry
+        azure_deployment="gpt-4o",  # GPT model via Azure OpenAI
         temperature=0.3,                      # Lower = more deterministic
         extract_images=True                   # Extract and include images
     )
@@ -53,7 +53,7 @@ def example_batch_evaluation():
 
             results = run_evaluation(
                 file_path=submission,
-                model="claude-3-5-sonnet-20241022"
+                azure_deployment="gpt-4o"
             )
 
             all_results.append({
@@ -72,14 +72,14 @@ def example_batch_evaluation():
 
 
 def example_custom_model():
-    """Example: Use different Claude models via Azure Foundry."""
+    """Example: Use different GPT models via Azure OpenAI."""
 
     file_path = "AnothercopyofAIML_ML_Project_Full_Code_Notebook.html"
 
     models = [
-        "claude-3-5-sonnet-20241022",
-        "claude-3-opus-20240229",
-        "claude-3-haiku-20240307"
+        "gpt-4o",
+        "gpt-4",
+        "gpt-35-turbo"
     ]
 
     for model in models:
@@ -90,7 +90,7 @@ def example_custom_model():
         try:
             results = run_evaluation(
                 file_path=file_path,
-                model=model,
+                azure_deployment=model,
                 temperature=0.3
             )
             print(f"✅ {model}: {results['total_marks']}/{results['max_marks']}")
@@ -103,7 +103,7 @@ def example_extract_feedback():
 
     results = run_evaluation(
         file_path="AnothercopyofAIML_ML_Project_Full_Code_Notebook.html",
-        model="claude-3-5-sonnet-20241022"
+        azure_deployment="gpt-4o"
     )
 
     # Get recommendations

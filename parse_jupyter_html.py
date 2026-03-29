@@ -12,6 +12,86 @@ import sys
 from pathlib import Path
 
 
+
+def _extract_plain_html(soup, html_path, extract_images=True, output_file_path=None):
+    """
+    Fallback extractor for HTML files that are NOT Jupyter notebook exports.
+    Pulls headings, paragraphs, code/pre blocks and list items into a clean
+    markdown string so the LLM can evaluate any HTML submission.
+    """
+    sections = []
+
+    # Remove script/style noise
+    for tag in soup(["script", "style", "head", "nav", "footer"]):
+        tag.decompose()
+
+    body = soup.find('body') or soup
+
+    # Walk top-level block elements in document order
+    block_tags = body.find_all(
+        ['h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+         'p', 'pre', 'code', 'ul', 'ol', 'table',
+         'section', 'article', 'main', 'div'],
+        recursive=False
+    )
+
+    # If no top-level blocks found, grab everything
+    if not block_tags:
+        block_tags = body.find_all(
+            ['h1', 'h2', 'h3', 'h4', 'p', 'pre', 'code', 'li']
+        )
+
+    chunk_index = 0
+    for tag in block_tags:
+        text = tag.get_text(separator=' ', strip=True)
+        if not text or len(text) < 5:
+            continue
+
+        tag_name = tag.name
+        chunk_index += 1
+
+        if tag_name in ('h1', 'h2', 'h3', 'h4', 'h5', 'h6'):
+            level = '#' * int(tag_name[1])
+            sections.append(f"\n{level} {text}\n")
+        elif tag_name in ('pre', 'code'):
+            sections.append(f"\n```\n{text}\n```\n")
+        elif tag_name in ('ul', 'ol'):
+            items = [f"- {li.get_text(strip=True)}"
+                     for li in tag.find_all('li')]
+            if items:
+                sections.append("\n" + "\n".join(items) + "\n")
+        else:
+            # paragraph / div / generic block — only include if meaningful
+            if len(text) > 20:
+                sections.append(f"\n{text}\n")
+
+    full_text = "\n".join(sections).strip()
+
+    if not full_text:
+        # Last resort: dump all visible text
+        full_text = soup.get_text(separator='\n', strip=True)
+
+    final_content = f"""# HTML Submission Content
+
+- **Source:** `{html_path.name}`
+- **Extraction:** plain-HTML fallback (no Jupyter cell structure detected)
+
+---
+
+{full_text}
+"""
+
+    print(f"✓ Extracted {len(final_content)} characters via plain-HTML fallback")
+
+    if output_file_path is not None:
+        out = Path(output_file_path)
+        with open(out, 'w', encoding='utf-8') as f:
+            f.write(final_content)
+        print(f"Saved to: {out}")
+
+    return final_content
+
+
 def parse_jupyter_html(html_file_path, output_file_path=None, extract_images=True):
     """
     Parse a Jupyter HTML export file and extract cell content.
@@ -58,18 +138,20 @@ def parse_jupyter_html(html_file_path, output_file_path=None, extract_images=Tru
             cells = classic_cells
             format_type = "nbconvert"
         else:
-            # Format 3: Try finding by other patterns
-            code_cells = soup.find_all('div', class_='code_cell')
-            text_cells = soup.find_all('div', class_='text_cell')
-            if code_cells or text_cells:
-                # Combine and sort by position
-                all_cells = code_cells + text_cells
-                all_cells.sort(key=lambda x: x.sourceline if hasattr(x, 'sourceline') else 0)
-                cells = all_cells
-                format_type = "mixed"
+            # Format 4: Some Jupyter exports use div.input / div.output directly
+            input_divs = soup.find_all('div', class_='input')
+            if input_divs:
+                cells = input_divs
+                format_type = "legacy"
 
     if not cells:
-        raise ValueError("No cells found in the HTML file. The format may not be recognized.")
+        # ── Universal fallback ────────────────────────────────────────────────
+        # The HTML is not a recognised Jupyter format (e.g. a plain code HTML,
+        # an nbviewer page, or a custom notebook export).  Extract all visible
+        # text content so the LLM can still evaluate it.
+        print("⚠  No Jupyter cell structure found. Falling back to full-HTML text extraction.")
+        return _extract_plain_html(soup, html_path, extract_images, output_file_path)
+    # ─────────────────────────────────────────────────────────────────────────
 
     print(f"Found {len(cells)} cells in the notebook (format: {format_type}).")
 
@@ -216,9 +298,10 @@ def parse_jupyter_html(html_file_path, output_file_path=None, extract_images=Tru
 
     # Determine output path
     if output_file_path is None:
-        output_path = html_path.with_suffix('.md')
-    else:
-        output_path = Path(output_file_path)
+        # Called in-memory mode (e.g. from evaluator agent) — skip writing to disk
+        return final_content
+
+    output_path = Path(output_file_path)
 
     # Save to file
     with open(output_path, 'w', encoding='utf-8') as f:

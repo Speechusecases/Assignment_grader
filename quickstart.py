@@ -3,7 +3,7 @@
 Quick Start Script for LangGraph Evaluator Agent
 
 This script provides simple commands to:
-1. Check Azure Foundry configuration
+1. Check Azure OpenAI configuration
 2. Test the evaluator with sample files
 3. Batch process multiple submissions
 """
@@ -15,44 +15,51 @@ import argparse
 from pathlib import Path
 
 
-def check_azure_foundry():
-    """Check if Azure Foundry is configured."""
-    print("🔍 Checking Azure Foundry configuration...")
+def check_azure_openai():
+    """Check if Azure OpenAI is configured."""
+    print("🔍 Checking Azure OpenAI configuration...")
 
-    endpoint = os.environ.get("AZURE_FOUNDRY_ENDPOINT")
-    api_key = os.environ.get("AZURE_FOUNDRY_API_KEY")
+    endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
+    api_key = os.environ.get("AZURE_OPENAI_API_KEY")
+    api_version = os.environ.get("AZURE_OPENAI_API_VERSION")
 
-    if endpoint and api_key:
-        print("✅ Azure Foundry credentials are configured!")
-        print(f"   Endpoint: {endpoint[:50]}..." if len(endpoint) > 50 else f"   Endpoint: {endpoint}")
-        print("   API Key: ****" + api_key[-4:] if len(api_key) > 4 else "   API Key: ****")
+    if endpoint and api_key and api_version:
+        print("✅ Azure OpenAI credentials are configured!")
+        
+        display_endpoint = endpoint[:50] + "..." if len(endpoint) > 50 else endpoint
+        display_key = "****" + api_key[-4:] if len(api_key) > 4 else "****"
+        
+        print(f"   Endpoint: {display_endpoint}")
+        print(f"   API Key: {display_key}")
         return True
     else:
-        print("❌ Azure Foundry credentials not fully configured.")
+        print("❌ Azure OpenAI credentials not fully configured.")
         if not endpoint:
-            print("   Missing: AZURE_FOUNDRY_ENDPOINT")
+            print("   Missing: AZURE_OPENAI_ENDPOINT")
         if not api_key:
-            print("   Missing: AZURE_FOUNDRY_API_KEY")
+            print("   Missing: AZURE_OPENAI_API_KEY")
+        if not api_version:
+            print("   Missing: AZURE_OPENAI_API_VERSION")
         print("\n   Set environment variables:")
-        print("     export AZURE_FOUNDRY_ENDPOINT='https://your-endpoint.azure.com'")
-        print("     export AZURE_FOUNDRY_API_KEY='your-api-key'")
+        print("     export AZURE_OPENAI_ENDPOINT='https://your-resource-name.openai.azure.com'")
+        print("     export AZURE_OPENAI_API_KEY='your-api-key'")
+        print("     export AZURE_OPENAI_API_VERSION='2024-02-15-preview'")
         return False
 
 
 def list_models():
-    """List available Claude models."""
-    print("\n📋 Available Claude Models (via Azure Foundry):")
+    """List available GPT models."""
+    print("\n📋 Available GPT Models (via Azure OpenAI):")
     models = [
-        ("claude-3-5-sonnet-20241022", "Balanced performance (recommended)"),
-        ("claude-3-opus-20240229", "Most capable, best for complex tasks"),
-        ("claude-3-sonnet-20240229", "Fast and capable"),
-        ("claude-3-haiku-20240307", "Fastest, most economical")
+        ("gpt-4o", "Most capable model, versatile for all tasks (recommended)"),
+        ("gpt-4", "Highly capable model"),
+        ("gpt-35-turbo", "Fastest and most economical model")
     ]
     for model, description in models:
         print(f"   - {model}: {description}")
 
 
-def test_evaluation(file_path: str, model: str = "claude-3-5-sonnet-20241022"):
+def test_evaluation(file_path: str, model: str = "gpt-4o"):
     """Run a test evaluation."""
     print(f"\n🧪 Testing evaluation with {model}...")
 
@@ -60,9 +67,9 @@ def test_evaluation(file_path: str, model: str = "claude-3-5-sonnet-20241022"):
         print(f"❌ File not found: {file_path}")
         return False
 
-    # Check Azure Foundry config first
-    if not check_azure_foundry():
-        print("\n⚠️  Please configure Azure Foundry credentials first.")
+    # Check Azure OpenAI config first
+    if not check_azure_openai():
+        print("\n⚠️  Please configure Azure OpenAI credentials first.")
         return False
 
     try:
@@ -70,7 +77,7 @@ def test_evaluation(file_path: str, model: str = "claude-3-5-sonnet-20241022"):
 
         results = run_evaluation(
             file_path=file_path,
-            model=model,
+            azure_deployment=model,
             temperature=0.3
         )
 
@@ -85,7 +92,7 @@ def test_evaluation(file_path: str, model: str = "claude-3-5-sonnet-20241022"):
         return False
 
 
-def batch_evaluate(directory: str, model: str = "claude-3-5-sonnet-20241022"):
+def batch_evaluate(directory: str, model: str = "gpt-4o"):
     """Evaluate all submissions in a directory."""
     print(f"\n📂 Batch processing: {directory}")
 
@@ -113,7 +120,7 @@ def batch_evaluate(directory: str, model: str = "claude-3-5-sonnet-20241022"):
         try:
             results = run_evaluation(
                 file_path=str(file_path),
-                model=model,
+                azure_deployment=model,
                 temperature=0.3
             )
 
@@ -128,7 +135,7 @@ def batch_evaluate(directory: str, model: str = "claude-3-5-sonnet-20241022"):
 
 
 def setup():
-    """Run setup - install dependencies and configure Azure Foundry."""
+    """Run setup - install dependencies and configure Azure OpenAI."""
     print("🚀 Setting up LangGraph Evaluator Agent...")
 
     # Check Python version
@@ -148,19 +155,20 @@ def setup():
         print(f"❌ Failed to install requirements: {e}")
         return False
 
-    # Check Azure Foundry configuration
-    print("\n🔐 Checking Azure Foundry configuration...")
-    if not check_azure_foundry():
-        print("\n⚠️  Please configure Azure Foundry credentials:")
-        print("   export AZURE_FOUNDRY_ENDPOINT='https://your-endpoint.azure.com'")
-        print("   export AZURE_FOUNDRY_API_KEY='your-api-key'")
+    # Check Azure OpenAI configuration
+    print("\n🔐 Checking Azure OpenAI configuration...")
+    if not check_azure_openai():
+        print("\n⚠️  Please configure Azure OpenAI credentials:")
+        print("   export AZURE_OPENAI_ENDPOINT='https://your-resource-name.openai.azure.com'")
+        print("   export AZURE_OPENAI_API_KEY='your-api-key'")
+        print("   export AZURE_OPENAI_API_VERSION='2024-02-15-preview'")
 
     # List available models
     list_models()
 
     print("\n✅ Setup complete!")
     print("\nNext steps:")
-    print("   1. Configure Azure Foundry credentials (if not done)")
+    print("   1. Configure Azure OpenAI credentials (if not done)")
     print("   2. Place your submission files in this directory")
     print("   3. Run: python quickstart.py test <file.html or file.pdf>")
     print("   4. Or use directly: python langraph_evaluator_agent.py <file>")
@@ -170,24 +178,24 @@ def setup():
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Quick start for LangGraph Evaluator Agent (Azure Foundry + Claude)",
+        description="Quick start for LangGraph Evaluator Agent (Azure OpenAI + GPT)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
     # Setup everything
     python quickstart.py setup
 
-    # Check Azure Foundry configuration
+    # Check Azure OpenAI configuration
     python quickstart.py check
 
-    # List available Claude models
+    # List available GPT models
     python quickstart.py models
 
     # Test with a file
     python quickstart.py test submission.html
 
-    # Test with specific Claude model
-    python quickstart.py test submission.html --model claude-3-opus-20240229
+    # Test with specific GPT model
+    python quickstart.py test submission.html --model gpt-4
 
     # Batch evaluate directory
     python quickstart.py batch ./submissions
@@ -200,33 +208,33 @@ Examples:
     subparsers.add_parser("setup", help="Install dependencies and setup")
 
     # Check command
-    subparsers.add_parser("check", help="Check Azure Foundry configuration")
+    subparsers.add_parser("check", help="Check Azure OpenAI configuration")
 
     # Models command
-    subparsers.add_parser("models", help="List available Claude models")
+    subparsers.add_parser("models", help="List available GPT models")
 
     # Test command
     test_parser = subparsers.add_parser("test", help="Test evaluation with a file")
     test_parser.add_argument("file", help="Path to HTML or PDF file")
-    test_parser.add_argument("--model", default="claude-3-5-sonnet-20241022", help="Claude model to use")
+    test_parser.add_argument("--model", default="gpt-4o", help="GPT model to use")
 
     # Batch command
     batch_parser = subparsers.add_parser("batch", help="Batch evaluate directory")
     batch_parser.add_argument("directory", help="Directory containing submissions")
-    batch_parser.add_argument("--model", default="claude-3-5-sonnet-20241022", help="Claude model to use")
+    batch_parser.add_argument("--model", default="gpt-4o", help="GPT model to use")
 
     args = parser.parse_args()
 
     if args.command == "setup":
         setup()
     elif args.command == "check":
-        check_azure_foundry()
+        check_azure_openai()
     elif args.command == "models":
         list_models()
     elif args.command == "test":
         test_evaluation(args.file, args.model)
     elif args.command == "batch":
-        if check_azure_foundry():
+        if check_azure_openai():
             batch_evaluate(args.directory, args.model)
     else:
         parser.print_help()

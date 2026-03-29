@@ -1,0 +1,165 @@
+{
+  "rubric_name": "Medical Assistant Rubric",
+  "total_points": 60,
+  "sections": [
+    {
+      "section": "Question Answering using LLM",
+      "points": 8,
+      "weightage": 13.33,
+      "ask": [
+        "Load LLM from Hugging Face",
+        "Create response generation function",
+        "Generate answers to questions",
+        "Provide observations on answers"
+      ],
+      "levels": {
+        "80-100": [
+          "LLM loaded from Hugging Face",
+          "Function created for model parameters",
+          "Answers generated for questions",
+          "Observations provided"
+        ],
+        "60-80": [
+          "LLM loaded",
+          "Function created",
+          "Answers generated"
+        ],
+        "<60": [
+          "LLM loaded",
+          "Function created"
+        ]
+      }
+    },
+    {
+      "section": "LLM Question Answering with Prompt Engineering",
+      "points": 11,
+      "weightage": 18.33,
+      "levels": {
+        "80-100": [
+          "Prompt engineering applied",
+          "At least five parameter combinations tested",
+          "Answers generated",
+          "Observations provided"
+        ],
+        "60-80": [
+          "Prompt engineering applied",
+          "Two to three parameter combinations tested",
+          "Observations provided"
+        ],
+        "<60": [
+          "Only one parameter combination tested"
+        ]
+      }
+    },
+    {
+      "section": "Data Preparation for RAG",
+      "points": 8,
+      "weightage": 13.33,
+      "levels": {
+        "80-100": [
+          "Data loaded",
+          "Text splitter applied",
+          "Embedding model loaded",
+          "Vector database loaded",
+          "Retriever defined"
+        ],
+        "60-80": [
+          "Data loaded",
+          "Text splitter applied",
+          "Embedding model loaded",
+          "Vector database loaded"
+        ],
+        "<60": [
+          "Data loaded",
+          "Text splitter applied",
+          "Embedding model loaded"
+        ]
+      }
+    },
+    {
+      "section": "Question Answering using RAG",
+      "points": 12,
+      "weightage": 20,
+      "levels": {
+        "80-100": [
+          "Answers generated",
+          "Retriever and LLM parameters tuned",
+          "At least five combinations tested",
+          "Observations provided"
+        ],
+        "60-80": [
+          "Answers generated",
+          "Two to three parameter combinations tested",
+          "Observations provided"
+        ],
+        "<60": [
+          "Answers generated",
+          "One parameter combination tested"
+        ]
+      }
+    },
+    {
+      "section": "Output Evaluation",
+      "points": 9,
+      "weightage": 15,
+      "levels": {
+        "80-100": [
+          "Evaluation prompt for groundedness defined",
+          "Evaluation prompt for relevance defined",
+          "All responses evaluated",
+          "Evaluation commentary provided"
+        ],
+        "60-80": [
+          "Evaluation prompts defined",
+          "Two to three responses evaluated"
+        ],
+        "<60": [
+          "One evaluation prompt defined",
+          "Two to three responses evaluated"
+        ]
+      }
+    },
+    {
+      "section": "Actionable Insights and Recommendations",
+      "points": 4,
+      "weightage": 6.67,
+      "levels": {
+        "80-100": [
+          "Three to four actionable insights",
+          "Two to three recommendations"
+        ],
+        "60-80": [
+          "One to two insights",
+          "One recommendation"
+        ],
+        "<60": [
+          "Some insight or recommendation mentioned"
+        ]
+      }
+    },
+    {
+      "section": "Presentation or Notebook Quality",
+      "points": 8,
+      "weightage": 13.33,
+      "levels": {
+        "80-100": [
+          "Clear structure",
+          "Crisp presentation",
+          "Visual appeal",
+          "Well commented code"
+        ],
+        "60-80": [
+          "Partial structure",
+          "Verbose presentation",
+          "Limited visuals",
+          "Some code comments"
+        ],
+        "<60": [
+          "No structure",
+          "Few visuals",
+          "No code comments"
+        ]
+      }
+    }
+  ]
+}

@@ -30,7 +30,7 @@ import pdfplumber
 
 # LLM for intelligent parsing
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_anthropic import ChatAnthropic
+from langchain_openai import AzureChatOpenAI
 
 
 def extract_text_from_pdf(pdf_path: str) -> str:
@@ -63,19 +63,21 @@ def extract_text_from_pdf(pdf_path: str) -> str:
 
 def get_llm():
     """Initialize the LLM."""
-    azure_endpoint = os.environ.get("AZURE_FOUNDRY_ENDPOINT", "")
-    api_key = os.environ.get("AZURE_FOUNDRY_API_KEY", "")
-    model = os.environ.get("AZURE_FOUNDRY_MODEL", "claude-3-5-sonnet-20241022")
+    azure_endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT", "")
+    api_key = os.environ.get("AZURE_OPENAI_API_KEY", "")
+    api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "")
+    azure_deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o")
 
     if not azure_endpoint or not api_key:
-        print("Error: Azure Foundry credentials not configured.")
-        print("Please set AZURE_FOUNDRY_ENDPOINT and AZURE_FOUNDRY_API_KEY in your .env file")
+        print("Error: Azure OpenAI credentials not configured.")
+        print("Please set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY in your .env file")
         sys.exit(1)
 
-    return ChatAnthropic(
-        model=model,
-        base_url=azure_endpoint,
+    return AzureChatOpenAI(
+        azure_endpoint=azure_endpoint,
         api_key=api_key,
+        api_version=api_version,
+        azure_deployment=azure_deployment,
         temperature=0.1,  # Low temperature for structured output
         max_tokens=8000
     )

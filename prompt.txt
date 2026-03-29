@@ -13,19 +13,43 @@ Formatting & Structure:
 Section Headers:
 Use the exact section names listed in the evaluation guide, in the same order. Do not add, merge, rename, or omit sections.
 
-Section Paragraphs:
-For each section, write a single paragraph of exactly 4–5 sentences.
+Section Paragraphs — EXACT OUTPUT STRUCTURE:
+Every section MUST be output in this exact three-part structure, with no deviations:
 
-One sentence must be the marks sentence in the exact format:
-"Marks: X/Y" (where Y is the section max).
+PART 1 — Section header as plain text (NOT inside any block):
+## Section Name
 
-The remaining sentences must:
+PART 2 — Feedback paragraph inside a fenced code block:
+```
+Write 4–5 sentences here. State what was done well. Identify specific technical gaps. Explain what to improve. Do not include the section header or marks anywhere inside this block.
+```
 
-State what was done well tied to that section’s criteria
+PART 3 — Marks as plain text on its own line (NOT inside any block):
+Marks: X/Y
 
-Explain what to improve tied to the criteria
+---
 
-Identify the specific technical gaps or omissions found in the submission that led to a lower score
+CONCRETE EXAMPLE (follow this pattern exactly for every section):
+
+## Question Answering using LLM
+
+```
+The submission correctly sets up the Mistral-7B model and applies it across all five medical questions with appropriate parameter configuration. The observations provided are superficial and do not critically assess the quality or clinical accuracy of the model outputs. The response generation function lacks explicit logging of token counts or latency metrics, which are important for benchmarking. Consider adding a structured evaluation of answer quality using a scoring rubric or reference answers.
+```
+
+Marks: 6/8
+
+---
+
+RULES — read carefully:
+- The section header (## ...) is ALWAYS outside and BEFORE the code block
+- The feedback paragraph is ALWAYS inside the ``` block
+- Marks: X/Y is ALWAYS outside and AFTER the code block
+- NEVER put the header inside the ``` block
+- NEVER put Marks: X/Y inside the ``` block
+- NEVER put the feedback paragraph outside the ``` block
+- Do NOT provide suggestions, code snippets, or "Suggested Improvement" blocks. Feedback sentences only.
+- Do NOT place Marks in the middle of the paragraph. Always at the end, outside the block.
 
 Constraint:
 Do not provide a numerical justification or a granular point-by-point breakdown for how many marks were deducted for each specific error or step.

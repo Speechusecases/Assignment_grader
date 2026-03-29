@@ -5,16 +5,18 @@ LangGraph Agent for Evaluating Student Submissions
 This agent:
 1. Takes HTML or PDF file paths as input
 2. Extracts content using parse_jupyter_html.py or parse_pdf_submission.py
-3. Uses Anthropic Claude models via Azure Foundry with LangGraph workflow
+3. Uses Azure OpenAI GPT models with LangGraph workflow
 4. Evaluates submissions based on rubrics and prompt guidelines
 5. Outputs structured feedback with marks
 
 Usage:
-    python langraph_evaluator_agent.py <submission_file> [--type html|pdf] [--model claude-3-5-sonnet]
+    python langraph_evaluator_agent.py <submission_file> [--type html|pdf] [--model gpt-4o]
 
 Environment Variables:
-    AZURE_FOUNDRY_ENDPOINT: Azure Foundry endpoint URL
-    AZURE_FOUNDRY_API_KEY: Azure Foundry API key
+    AZURE_OPENAI_ENDPOINT: Azure OpenAI endpoint URL
+    AZURE_OPENAI_API_KEY: Azure OpenAI API key
+    AZURE_OPENAI_API_VERSION: Azure OpenAI API version
+    AZURE_OPENAI_DEPLOYMENT_NAME: Azure OpenAI chat deployment name (e.g. gpt-4o)
 """
 
 import os
@@ -32,12 +34,32 @@ load_dotenv(Path(__file__).parent / ".env")
 # LangGraph imports
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_anthropic import ChatAnthropic
+from langchain_openai import AzureChatOpenAI
 
 # Import existing parsers
 sys.path.insert(0, str(Path(__file__).parent))
 from parse_jupyter_html import parse_jupyter_html
 from parse_pdf_submission import parse_pdf_submission
+
+
+# =============================================================================
+# REASONING MODEL DETECTION
+# =============================================================================
+
+# Prefix patterns that identify OpenAI o-series reasoning models
+_REASONING_PREFIXES = ("o1", "o2", "o3", "o4")
+
+def is_reasoning_model(deployment_name: str) -> bool:
+    """Return True if the deployment is an o-series reasoning (thinking) model.
+
+    Reasoning models (o1, o3, o3-mini, o4-mini, etc.) differ from standard
+    GPT models because they:
+    - Do not accept a `temperature` parameter
+    - Use `max_completion_tokens` instead of `max_tokens`
+    - Internally reason step-by-step before producing output
+    """
+    name = deployment_name.lower().strip()
+    return any(name.startswith(p) for p in _REASONING_PREFIXES)
 
 
 # =============================================================================
@@ -65,34 +87,49 @@ class EvaluatorState(TypedDict):
 @dataclass
 class EvaluatorConfig:
     """Configuration for the evaluator agent."""
-    # Azure Foundry settings for Anthropic Claude
-    model: str = None  # Claude model (loaded from .env if not provided)
-    azure_endpoint: str = None  # Azure Foundry endpoint URL
-    api_key: str = None  # Azure Foundry API key
+    # Azure OpenAI settings
+    azure_deployment: str = None  # GPT model deployment name
+    azure_endpoint: str = None  # Azure OpenAI endpoint URL
+    api_key: str = None  # Azure OpenAI API key
+    api_version: str = None  # Azure OpenAI API version
     temperature: float = None
     max_tokens: int = None
     extract_images: bool = True
     custom_rubric: Dict[str, Any] = None  # Custom rubric data (if provided)
+    thinking_mode: bool = None  # None = auto-detect from deployment name
 
     def __post_init__(self):
-        """Load Azure Foundry configuration from .env file if not provided."""
-        # Load endpoint and API key
+        """Load Azure OpenAI configuration from .env file if not provided."""
+        # Load endpoint, API key and API version
         if self.azure_endpoint is None:
-            self.azure_endpoint = os.environ.get("AZURE_FOUNDRY_ENDPOINT", "")
+            self.azure_endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT", "")
         if self.api_key is None:
-            self.api_key = os.environ.get("AZURE_FOUNDRY_API_KEY", "")
+            self.api_key = os.environ.get("AZURE_OPENAI_API_KEY", "")
+        if self.api_version is None:
+            self.api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
 
-        # Load model with default fallback
-        if self.model is None:
-            self.model = os.environ.get("AZURE_FOUNDRY_MODEL", "claude-3-5-sonnet-20241022")
+        # Load deployment name with default fallback
+        if self.azure_deployment is None:
+            self.azure_deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o")
 
-        # Load temperature with default fallback
+        # Auto-detect thinking mode from deployment name if not explicitly set
+        if self.thinking_mode is None:
+            env_val = os.environ.get("AZURE_OPENAI_THINKING_MODE", "").lower()
+            if env_val in ("true", "1", "yes"):
+                self.thinking_mode = True
+            elif env_val in ("false", "0", "no"):
+                self.thinking_mode = False
+            else:
+                # Auto-detect from deployment name
+                self.thinking_mode = is_reasoning_model(self.azure_deployment)
+
+        # Load temperature — reasoning models do NOT support temperature
         if self.temperature is None:
-            self.temperature = float(os.environ.get("AZURE_FOUNDRY_TEMPERATURE", "0.3"))
+            self.temperature = float(os.environ.get("AZURE_OPENAI_TEMPERATURE", "0.3"))
 
         # Load max_tokens with default fallback
         if self.max_tokens is None:
-            self.max_tokens = int(os.environ.get("AZURE_FOUNDRY_MAX_TOKENS", "4096"))
+            self.max_tokens = int(os.environ.get("AZURE_OPENAI_MAX_TOKENS", "8000"))
 
 
 # =============================================================================
@@ -227,22 +264,36 @@ def evaluate_with_llm(state: EvaluatorState, config: EvaluatorConfig) -> Evaluat
         return state
 
     try:
-        # Validate Azure Foundry configuration
-        if not config.azure_endpoint or not config.api_key:
+        # Validate Azure OpenAI configuration
+        if not config.azure_endpoint or not config.api_key or not config.api_version:
             state["errors"].append(
-                "Azure Foundry credentials not configured. "
-                "Set AZURE_FOUNDRY_ENDPOINT and AZURE_FOUNDRY_API_KEY in .env file."
+                "Azure OpenAI credentials not configured. "
+                "Set AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, and AZURE_OPENAI_API_VERSION in .env file."
             )
             return state
 
-        # Initialize Anthropic Claude model via Azure Foundry
-        llm = ChatAnthropic(
-            model=config.model,
-            base_url=config.azure_endpoint,
-            api_key=config.api_key,
-            temperature=config.temperature,
-            max_tokens=config.max_tokens
-        )
+        # Initialize Azure OpenAI model — handle reasoning vs standard models differently
+        if config.thinking_mode:
+            # o-series reasoning models: no temperature, use max_completion_tokens
+            print(f"\n🧠 Thinking mode ON — using {config.azure_deployment} (reasoning model)")
+            llm = AzureChatOpenAI(
+                azure_endpoint=config.azure_endpoint,
+                api_key=config.api_key,
+                api_version=config.api_version,
+                azure_deployment=config.azure_deployment,
+                max_completion_tokens=config.max_tokens,
+                # temperature intentionally omitted — o-series models reject it
+            )
+        else:
+            # Standard GPT models (gpt-4o, gpt-4.1, etc.)
+            llm = AzureChatOpenAI(
+                azure_endpoint=config.azure_endpoint,
+                api_key=config.api_key,
+                api_version=config.api_version,
+                azure_deployment=config.azure_deployment,
+                temperature=config.temperature,
+                max_tokens=config.max_tokens
+            )
 
         # Prepare system prompt with guidelines
         system_prompt = build_system_prompt(state["prompt_guidelines"])
@@ -253,7 +304,7 @@ def evaluate_with_llm(state: EvaluatorState, config: EvaluatorConfig) -> Evaluat
             rubric=state["rubric_criteria"]
         )
 
-        print(f"\n🤖 Evaluating with {config.model} via Azure Foundry...")
+        print(f"\n🤖 Evaluating with {config.azure_deployment} via Azure OpenAI...")
 
         # Call LLM
         messages = [
@@ -326,7 +377,7 @@ def save_results(state: EvaluatorState, config: EvaluatorConfig) -> EvaluatorSta
         results = {
             "file": input_path.name,
             "file_type": state["file_type"],
-            "model": config.model,
+            "model": config.azure_deployment,
             "total_marks": state["total_marks"],
             "max_marks": state["max_marks"],
             "percentage": round((state["total_marks"] / state["max_marks"]) * 100, 2) if state["max_marks"] > 0 else 0,
@@ -531,12 +582,18 @@ def build_evaluation_prompt(content: str, rubric: Dict[str, Any]) -> str:
     total_points = rubric.get('total_points', total_max_marks)
 
     # Truncate content if too long (to fit in context window)
-    max_content_length = 15000  # Adjust based on model context window
+    # gpt-4o and gpt-4.1 support 128k token context; 80k chars ≈ 20k tokens, safe headroom
+    max_content_length = 80000
     if len(content) > max_content_length:
-        content = content[:max_content_length] + "\n\n[Content truncated due to length...]"
+        # Keep first 60k and last 20k chars so we don't lose conclusions/results
+        content = (
+            content[:60000]
+            + "\n\n[... middle section truncated for length ...] \n\n"
+            + content[-20000:]
+        )
 
     return f"""Please evaluate the following student submission.
-
+    
 ## RUBRIC: {rubric_name}
 Total Maximum Points: {total_points}
 
@@ -546,35 +603,9 @@ Total Maximum Points: {total_points}
 ## SUBMISSION CONTENT
 {content}
 
-## INSTRUCTIONS
-1. Evaluate EACH section listed in the rubric above
-2. For EACH section, you MUST include marks in this EXACT format: "Marks: X/Y" (where Y is the max marks for that section)
-3. Provide specific, actionable feedback for each section
-4. At the end, include: "Total Marks: X/{total_points}"
-5. Provide an overall summary with key strengths and areas for improvement
-
 ## REQUIRED OUTPUT FORMAT
-
-For each section in the rubric, write:
-
-## [Section Name]
-[3-5 sentences of specific feedback about this section]
-Marks: X/Y
-
-Then at the end:
-
-## Overall Summary
-[2-3 paragraphs summarizing overall performance]
-
-## Total Score
-Total Marks: X/{total_points}
-
-## Key Recommendations
-- [Specific recommendation 1]
-- [Specific recommendation 2]
-- [Specific recommendation 3]
-
-IMPORTANT: You must evaluate ALL sections and provide marks for EACH one using "Marks: X/Y" format.
+Ensure you strictly follow the mentor formatting instructions provided in the system prompt.
+Do not include any extra sections beyond what is requested.
 """
 
 
@@ -636,13 +667,11 @@ def parse_evaluation_response(response: str) -> Dict[str, Any]:
             evaluations["total_marks"] += marks
             evaluations["max_marks"] += max_marks
 
-    # Try to extract explicit total marks (this takes precedence if found)
+    # Try to extract explicit total marks matching "Total: S/T (P%)"
     total_patterns = [
+        r'Total:\s*(\d+)\s*/\s*(\d+)',
         r'Total\s*Marks?:\s*(\d+)\s*/\s*(\d+)',
-        r'Total\s*Score:\s*(\d+)\s*/\s*(\d+)',
-        r'Overall\s*Score:\s*(\d+)\s*/\s*(\d+)',
-        r'Final\s*Score:\s*(\d+)\s*/\s*(\d+)',
-        r'\*\*Total[:\s]*(\d+)\s*/\s*(\d+)\*\*',
+        r'Overall\s*Score:\s*(\d+)\s*/\s*(\d+)'
     ]
 
     for pattern in total_patterns:
@@ -652,15 +681,13 @@ def parse_evaluation_response(response: str) -> Dict[str, Any]:
             evaluations["max_marks"] = int(total_match.group(2))
             break
 
-    # Extract recommendations
-    rec_section = re.search(r'(?:Key\s*)?Recommendations?:?\s*\n([\s\S]+?)(?:\n##|\n\*\*|\Z)', response, re.IGNORECASE)
-    if rec_section:
-        rec_text = rec_section.group(1)
-        recommendations = re.findall(r'^[\s]*[-*\d.]+\s*(.+)$', rec_text, re.MULTILINE)
-        evaluations["recommendations"] = [r.strip() for r in recommendations if r.strip()]
-
-    # Store full response as summary
-    evaluations["summary"] = response[:500] if len(response) > 500 else response
+    # Extract overall comments
+    comments_section = re.search(r'Overall\s*Comments?:?\s*\n([\s\S]+?)(?:\Z)', response, re.IGNORECASE)
+    if comments_section:
+        evaluations["summary"] = comments_section.group(1).strip()
+    else:
+        # Fallback to saving the full response
+        evaluations["summary"] = response[:500] if len(response) > 500 else response
 
     return evaluations
 
@@ -679,7 +706,7 @@ def format_evaluation_report(state: EvaluatorState) -> str:
 ## Summary
 - **File:** {state['file_path']}
 - **Type:** {state['file_type'].upper()}
-- **Model Used:** {EvaluatorConfig().model} (via Azure Foundry)
+- **Model Used:** {EvaluatorConfig().azure_deployment} (via Azure OpenAI)
 - **Total Score:** {state['total_marks']}/{state['max_marks']} ({percentage}%)
 
 ---
@@ -762,11 +789,12 @@ def build_evaluation_graph(config: EvaluatorConfig):
 def run_evaluation(
     file_path: str,
     file_type: Optional[str] = None,
-    model: str = None,
+    azure_deployment: str = None,
     temperature: float = None,
     extract_images: bool = True,
     azure_endpoint: Optional[str] = None,
     api_key: Optional[str] = None,
+    api_version: Optional[str] = None,
     custom_rubric: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
@@ -775,11 +803,12 @@ def run_evaluation(
     Args:
         file_path: Path to the submission file (HTML or PDF)
         file_type: Override file type detection ('html' or 'pdf')
-        model: Claude model to use (defaults to AZURE_FOUNDRY_MODEL from .env)
-        temperature: LLM temperature (defaults to AZURE_FOUNDRY_TEMPERATURE from .env)
+        azure_deployment: GPT model deployment name (defaults to AZURE_OPENAI_DEPLOYMENT_NAME from .env)
+        temperature: LLM temperature (defaults to AZURE_OPENAI_TEMPERATURE from .env)
         extract_images: Whether to extract images from submission
-        azure_endpoint: Azure Foundry endpoint (defaults to AZURE_FOUNDRY_ENDPOINT from .env)
-        api_key: Azure Foundry API key (defaults to AZURE_FOUNDRY_API_KEY from .env)
+        azure_endpoint: Azure OpenAI endpoint (defaults to AZURE_OPENAI_ENDPOINT from .env)
+        api_key: Azure OpenAI API key (defaults to AZURE_OPENAI_API_KEY from .env)
+        api_version: Azure OpenAI API version (defaults to AZURE_OPENAI_API_VERSION from .env)
         custom_rubric: Custom rubric dict to use instead of default rubric files
 
     Returns:
@@ -787,11 +816,12 @@ def run_evaluation(
     """
     # Initialize configuration (loads from .env if not provided)
     config = EvaluatorConfig(
-        model=model,
+        azure_deployment=azure_deployment,
         temperature=temperature,
         extract_images=extract_images,
         azure_endpoint=azure_endpoint,
         api_key=api_key,
+        api_version=api_version,
         custom_rubric=custom_rubric
     )
 
@@ -816,7 +846,7 @@ def run_evaluation(
     print(f"LangGraph Evaluator Agent")
     print(f"{'='*60}")
     print(f"File: {file_path}")
-    print(f"Model: {model}")
+    print(f"Model: {config.azure_deployment}")
     print(f"{'='*60}\n")
 
     # Run the workflow
@@ -846,31 +876,32 @@ def run_evaluation(
 def main():
     """Main entry point with command-line arguments."""
     parser = argparse.ArgumentParser(
-        description="LangGraph Agent for evaluating student submissions using Anthropic Claude via Azure Foundry",
+        description="LangGraph Agent for evaluating student submissions using Azure OpenAI GPT models",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
     # Evaluate HTML notebook submission (uses settings from .env)
     python langraph_evaluator_agent.py submission.html
 
-    # Evaluate PDF report with specific Claude model
-    python langraph_evaluator_agent.py report.pdf --model claude-3-5-sonnet-20241022
+    # Evaluate PDF report with a specific GPT model deployment
+    python langraph_evaluator_agent.py report.pdf --model gpt-4o
 
     # Evaluate with custom temperature
-    python langraph_evaluator_agent.py submission.html --model claude-3-opus-20240229 --temperature 0.5
+    python langraph_evaluator_agent.py submission.html --model gpt-4o --temperature 0.5
 
-Available Claude Models (via Azure Foundry):
-    - claude-3-5-sonnet-20241022  (Recommended - balanced performance)
-    - claude-3-opus-20240229      (Most capable)
-    - claude-3-sonnet-20240229    (Balanced)
-    - claude-3-haiku-20240307     (Fast and efficient)
-    - claude-opus-4-5             (Latest Opus)
+Available GPT Chat Models (via Azure OpenAI):
+    - gpt-4o          (Recommended - best balance of speed and quality)
+    - gpt-4o-mini     (Faster and cheaper)
+    - gpt-4.1         (Latest GPT-4.1)
+    - gpt-4.1-mini    (Lighter GPT-4.1)
 
 Environment Variables (set in .env file):
-    AZURE_FOUNDRY_ENDPOINT  - Azure Foundry endpoint URL
-    AZURE_FOUNDRY_API_KEY   - Azure Foundry API key
-    AZURE_FOUNDRY_MODEL     - Default model to use
-    AZURE_FOUNDRY_TEMPERATURE - Default temperature
+    AZURE_OPENAI_ENDPOINT         - Azure OpenAI endpoint URL
+    AZURE_OPENAI_API_KEY          - Azure OpenAI API key
+    AZURE_OPENAI_API_VERSION      - API version (e.g. 2025-04-01-preview)
+    AZURE_OPENAI_DEPLOYMENT_NAME  - Chat model deployment name (e.g. gpt-4o)
+    AZURE_OPENAI_TEMPERATURE      - Default temperature (default: 0.3)
+    AZURE_OPENAI_MAX_TOKENS       - Max tokens for response (default: 4096)
         """
     )
 
@@ -912,15 +943,15 @@ Environment Variables (set in .env file):
 
     args = parser.parse_args()
 
-    # Check Azure Foundry configuration
-    endpoint = os.environ.get("AZURE_FOUNDRY_ENDPOINT")
-    api_key = os.environ.get("AZURE_FOUNDRY_API_KEY")
+    # Check Azure OpenAI configuration
+    endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
+    api_key = os.environ.get("AZURE_OPENAI_API_KEY")
 
     if not endpoint or not api_key:
-        print("⚠️  Warning: Azure Foundry credentials not configured in .env file.")
+        print("⚠️  Warning: Azure OpenAI credentials not configured in .env file.")
         print("   Please set the following in your .env file:")
-        print("     AZURE_FOUNDRY_ENDPOINT='https://your-endpoint.azure.com'")
-        print("     AZURE_FOUNDRY_API_KEY='your-api-key'")
+        print("     AZURE_OPENAI_ENDPOINT='https://your-resource.openai.azure.com/'")
+        print("     AZURE_OPENAI_API_KEY='your-api-key'")
         print()
 
     # Run evaluation
@@ -928,7 +959,7 @@ Environment Variables (set in .env file):
         results = run_evaluation(
             file_path=args.file_path,
             file_type=args.type,
-            model=args.model,
+            azure_deployment=args.model,
             temperature=args.temperature,
             extract_images=not args.no_images
         )
