@@ -148,6 +148,29 @@ async def create_session():
     session_id = get_or_create_session()
     return {"session_id": session_id}
 
+@app.post("/api/session/{session_id}/reset")
+async def reset_session(session_id: str):
+    """Reset session for new evaluation — keeps rubric, clears submission and results."""
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session = sessions[session_id]
+    # Preserve rubric data
+    rubric_data = session["rubric_data"]
+    rubric_name = session["rubric_name"]
+
+    # Clear submission and evaluation
+    session["submission_path"] = None
+    session["submission_name"] = None
+    session["evaluation_result"] = None
+    session["chat_history"] = []
+
+    return {
+        "session_id": session_id,
+        "rubric_preserved": rubric_data is not None,
+        "rubric_name": rubric_name
+    }
+
 @app.get("/api/session/{session_id}")
 async def get_session(session_id: str):
     """Get session status."""
@@ -475,6 +498,17 @@ def get_chat_ui_html():
             flex-direction: column;
             border-right: 1px solid var(--border-primary);
             flex-shrink: 0;
+            transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                        opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                        visibility 0.3s;
+            position: relative;
+            z-index: 10;
+        }
+
+        .sidebar.collapsed {
+            margin-left: -280px;
+            opacity: 0;
+            visibility: hidden;
         }
 
         .sidebar-header {
@@ -505,6 +539,27 @@ def get_chat_ui_html():
 
         .logo-text span {
             color: var(--accent-secondary);
+        }
+
+        .sidebar-close-btn {
+            margin-left: auto;
+            width: 28px;
+            height: 28px;
+            border-radius: var(--radius-sm);
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            transition: var(--transition);
+        }
+
+        .sidebar-close-btn:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
         }
 
         .new-session-btn {
@@ -1475,14 +1530,29 @@ def get_chat_ui_html():
         @media (max-width: 768px) {
             .sidebar {
                 position: fixed;
-                left: -280px;
+                left: 0;
                 top: 0;
                 height: 100%;
                 z-index: 100;
-                transition: var(--transition);
+                margin-left: 0;
+                box-shadow: var(--shadow-lg);
             }
-            .sidebar.open {
+            .sidebar.collapsed {
+                left: -280px;
+                margin-left: 0;
+            }
+            .sidebar-overlay {
+                display: block;
+                position: fixed;
+                top: 0;
                 left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.5);
+                z-index: 99;
+            }
+            .sidebar-overlay.hidden {
+                display: none;
             }
             .feature-cards {
                 display: none;
@@ -1560,11 +1630,14 @@ def get_chat_ui_html():
             <div class="logo-text">
                 Grader<span>AI</span>
             </div>
+            <button class="sidebar-close-btn" onclick="toggleSidebar()" title="Close sidebar">
+                <i class="fas fa-chevron-left"></i>
+            </button>
         </div>
 
         <button class="new-session-btn" onclick="newChat()">
-            <i class="fas fa-plus"></i>
-            New Evaluation
+            <i class="fas fa-arrow-right"></i>
+            Next Submission
         </button>
 
         <div class="upload-section">
@@ -1681,11 +1754,14 @@ def get_chat_ui_html():
         </div>
     </aside>
 
+    <!-- Mobile Sidebar Overlay -->
+    <div class="sidebar-overlay hidden" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
     <!-- Main Content -->
     <main class="main-wrapper">
         <header class="main-header">
             <div class="header-title">
-                <button class="header-btn" onclick="toggleSidebar()" id="menuBtn" style="display: none;">
+                <button class="header-btn" onclick="toggleSidebar()" id="menuBtn" title="Toggle sidebar">
                     <i class="fas fa-bars"></i>
                 </button>
                 <h1>Assignment Evaluator</h1>
@@ -1693,7 +1769,7 @@ def get_chat_ui_html():
             <div class="header-actions">
                 <div class="model-pill">
                     <span class="dot"></span>
-                    Claude via Azure Foundry
+                    GPT via Azure OpenAI
                 </div>
                 <button class="header-btn" onclick="toggleTheme()" title="Toggle theme">
                     <i class="fas fa-moon"></i>
@@ -1804,17 +1880,26 @@ def get_chat_ui_html():
         window.onresize = checkResponsive;
 
         function checkResponsive() {
-            const menuBtn = document.getElementById('menuBtn');
+            // Hamburger menu is always visible — no need to hide it
+            const sidebar = document.getElementById('sidebar');
             if (window.innerWidth <= 768) {
-                menuBtn.style.display = 'flex';
-            } else {
-                menuBtn.style.display = 'none';
-                document.getElementById('sidebar').classList.remove('open');
+                // On mobile, start collapsed
+                if (!sidebar.dataset.userToggled) {
+                    sidebar.classList.add('collapsed');
+                }
             }
         }
 
         function toggleSidebar() {
-            document.getElementById('sidebar').classList.toggle('open');
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            sidebar.classList.toggle('collapsed');
+            sidebar.dataset.userToggled = 'true';
+            // Handle mobile overlay
+            if (overlay) {
+                const isCollapsed = sidebar.classList.contains('collapsed');
+                overlay.classList.toggle('hidden', isCollapsed);
+            }
         }
 
         // ============ Session Management ============
@@ -2198,21 +2283,37 @@ def get_chat_ui_html():
         }
 
         async function newChat() {
-            // Reset UI
+            // Reset UI — clear chat and submission, but keep rubric
             document.getElementById('welcomeScreen').style.display = 'flex';
             document.getElementById('messagesContainer').style.display = 'none';
             document.getElementById('messagesContainer').innerHTML = '';
 
-            // Reset file uploads
-            removeRubric({ stopPropagation: () => {} });
+            // Only reset submission, keep rubric
             removeSubmission({ stopPropagation: () => {} });
 
             // Reset score display
             document.getElementById('scoreDisplay').style.display = 'none';
 
-            // Create new session
-            await createSession();
-            showToast('success', 'New Session', 'Ready for a new evaluation');
+            // Reset session on backend — keeps rubric
+            if (sessionId) {
+                try {
+                    const response = await fetch(`/api/session/${sessionId}/reset`, { method: 'POST' });
+                    const data = await response.json();
+                    if (data.rubric_preserved) {
+                        showToast('success', 'New Evaluation', `Ready for next submission — rubric "${data.rubric_name}" is still loaded`);
+                    } else {
+                        showToast('success', 'New Evaluation', 'Ready for a new evaluation');
+                    }
+                } catch (error) {
+                    // Fallback: create entirely new session
+                    removeRubric({ stopPropagation: () => {} });
+                    await createSession();
+                    showToast('success', 'New Session', 'Ready for a new evaluation');
+                }
+            } else {
+                await createSession();
+                showToast('success', 'New Session', 'Ready for a new evaluation');
+            }
         }
 
         function copyMessage(button) {

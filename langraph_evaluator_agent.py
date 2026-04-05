@@ -538,14 +538,28 @@ def build_system_prompt(prompt_guidelines: str) -> str:
 
 Your task is to evaluate the following student submission and provide structured feedback following the guidelines above.
 
-IMPORTANT RULES:
-1. Evaluate ONLY based on what is present in the submission - do not assume missing content exists
-2. Provide specific, actionable feedback tied to the evaluation criteria
-3. Use the exact marks format: "Marks: X/Y" in each section
-4. Be constructive but honest about gaps and areas for improvement
-5. Focus on technical accuracy, methodology, and completeness
-6. For code submissions, evaluate code quality, documentation, and reproducibility
-7. For model deployment submissions, evaluate functional correctness and completeness
+CRITICAL EVALUATION RULES — you MUST follow these:
+
+1. EVIDENCE-BASED SCORING: For every section, before assigning marks, mentally list which specific criteria from the rubric are DEMONSTRABLY MET with explicit evidence (code, outputs, analysis) visible in the submission. Criteria that are merely mentioned but not implemented do NOT count.
+
+2. STRICT CRITERIA MATCHING: Compare the submission against each criterion listed in the rubric:
+   - If the rubric lists 4 requirements and only 3 are fully demonstrated → do NOT give full marks
+   - If work is present but shallow, generic, or lacks depth → score in the 60-80% range for that section
+   - If work is thorough with specific evidence for every criterion → score in the 80-100% range
+   - If work is missing or barely attempted → score below 60%
+
+3. MARKS CALIBRATION:
+   - Full marks (100%) for a section should be EXCEPTIONAL — only when every single criterion is met with high quality AND the work goes beyond basic requirements
+   - A typical solid submission should score 65-80% of total marks
+   - Award marks proportionally: if 2 out of 4 criteria are met, award approximately 50% of section marks
+
+4. SPECIFIC GAPS: In feedback, explicitly name WHAT IS MISSING or WHAT IS WEAK. Do not write vague praise. For example:
+   - BAD: "The section is thorough and well-done."
+   - GOOD: "The embedding model is loaded but no evidence of vector database persistence or retriever validation is shown."
+
+5. DO NOT assume quality from mere presence. A student mentioning "observations" is not the same as providing insightful, specific observations. Evaluate the QUALITY and DEPTH, not just existence.
+
+6. Use the exact marks format: "Marks: X/Y" in each section.
 """
 
 
@@ -566,15 +580,31 @@ def build_evaluation_prompt(content: str, rubric: Dict[str, Any]) -> str:
         max_marks = section.get('points', section.get('max_marks', 0))
         total_max_marks += max_marks
 
-        # Handle different key names for criteria
-        criteria = section.get('description', section.get('criteria', []))
-        if isinstance(criteria, list):
-            criteria_str = ', '.join(criteria)
-        else:
-            criteria_str = str(criteria)
-
         rubric_lines.append(f"- **{section_name}**: Max {max_marks} marks")
-        if criteria_str:
+
+        # Include "ask" requirements (what the student is asked to do)
+        ask = section.get('ask', [])
+        if ask and isinstance(ask, list):
+            rubric_lines.append(f"  Requirements: {', '.join(ask)}")
+
+        # Include grading levels (80-100%, 60-80%, <60%) for strict scoring
+        levels = section.get('levels', {})
+        if levels and isinstance(levels, dict):
+            for level_key, level_criteria in levels.items():
+                if isinstance(level_criteria, list):
+                    rubric_lines.append(
+                        f"  [{level_key}%]: {', '.join(level_criteria)}"
+                    )
+                else:
+                    rubric_lines.append(f"  [{level_key}%]: {level_criteria}")
+
+        # Handle generic criteria/description fields
+        criteria = section.get('description', section.get('criteria', []))
+        if criteria:
+            if isinstance(criteria, list):
+                criteria_str = ', '.join(criteria)
+            else:
+                criteria_str = str(criteria)
             rubric_lines.append(f"  Criteria: {criteria_str}")
 
     rubric_text = "\n".join(rubric_lines)
@@ -582,35 +612,62 @@ def build_evaluation_prompt(content: str, rubric: Dict[str, Any]) -> str:
     total_points = rubric.get('total_points', total_max_marks)
 
     # Truncate content if too long (to fit in context window)
-    # gpt-4o and gpt-4.1 support 128k token context; 80k chars ≈ 20k tokens, safe headroom
-    max_content_length = 80000
+    # gpt-4.1 supports 1M token context, gpt-4o supports 128K; 300K chars ≈ 75K tokens
+    max_content_length = 300000
     if len(content) > max_content_length:
-        # Keep first 60k and last 20k chars so we don't lose conclusions/results
+        # Keep first 200k and last 100k chars so we don't lose conclusions/results
         content = (
-            content[:60000]
+            content[:200000]
             + "\n\n[... middle section truncated for length ...] \n\n"
-            + content[-20000:]
+            + content[-100000:]
         )
 
-    return f"""Please evaluate the following student submission.
-    
+    return f"""Please evaluate the following student submission STRICTLY against the rubric below.
+
 ## RUBRIC: {rubric_name}
 Total Maximum Points: {total_points}
 
 ### Sections to Evaluate:
 {rubric_text}
 
+### HOW TO USE THE RUBRIC LEVELS:
+For each section, the rubric defines performance tiers. Use them as follows:
+- **[80-100%] tier**: ALL listed criteria must be demonstrably met with quality work → award 80-100% of section marks
+- **[60-80%] tier**: Most but not all criteria met, or work is shallow → award 60-80% of section marks  
+- **[<60%] tier**: Only basic criteria met, significant gaps → award below 60% of section marks
+- **Missing section**: 0 marks
+
+For example, if a section has max 8 marks:
+- [80-100%] → 7-8 marks (only if ALL top-tier criteria fully met with depth)
+- [60-80%] → 5-6 marks (some criteria met, some missing or shallow)
+- [<60%] → 1-4 marks (major gaps)
+
 ## SUBMISSION CONTENT
 {content}
 
-## REQUIRED OUTPUT FORMAT
-Ensure you strictly follow the mentor formatting instructions provided in the system prompt.
-Do not include any extra sections beyond what is requested.
+## EVALUATION INSTRUCTIONS
+1. For EACH section, first identify which specific criteria from the rubric ARE and ARE NOT met in the submission
+2. Determine which performance tier ([80-100%], [60-80%], [<60%]) the submission falls into for that section
+3. Assign marks accordingly — marks must reflect the tier
+4. In feedback, explicitly state what is missing or weak, referencing the rubric criteria
+5. Follow the exact output format from the system prompt (## Header, ``` feedback ```, Marks: X/Y)
+6. Do not include any extra sections beyond what is in the rubric
 """
 
 
 def parse_evaluation_response(response: str) -> Dict[str, Any]:
-    """Parse the LLM evaluation response to extract structured data."""
+    """Parse the LLM evaluation response to extract structured data.
+
+    Handles the prompt.txt format where each section looks like:
+
+        ## Section Name
+        ```
+        feedback text
+        ```
+        Marks: X/Y
+
+    Also handles older/simpler formats where Marks: X/Y appears inline.
+    """
     import re
 
     evaluations = {
@@ -621,18 +678,32 @@ def parse_evaluation_response(response: str) -> Dict[str, Any]:
         "recommendations": []
     }
 
-    # Try multiple patterns to extract marks
+    # ── Pattern A (primary): code-fence format from prompt.txt ────────────
+    # ## Section Name
+    # ```
+    # feedback ...
+    # ```
+    # Marks: X/Y
+    code_fence_pattern = (
+        r'##\s*([^\n]+)\n'          # ## heading
+        r'\s*```[^\n]*\n'           # opening ```
+        r'([\s\S]*?)'              # feedback inside fence
+        r'```\s*\n?'               # closing ```
+        r'\s*Marks:\s*(\d+)\s*/\s*(\d+)'  # Marks: X/Y
+    )
+    section_matches = re.findall(code_fence_pattern, response, re.IGNORECASE)
 
-    # Pattern 1: ## Section Name ... Marks: X/Y
-    section_pattern1 = r'##\s*\d*\.?\s*([^\n]+)\n([\s\S]*?)Marks:\s*(\d+)\s*/\s*(\d+)'
-    section_matches = re.findall(section_pattern1, response, re.IGNORECASE)
+    # ── Pattern B: ## Section Name ... Marks: X/Y (no code fence) ─────────
+    if not section_matches:
+        section_pattern1 = r'##\s*\d*\.?\s*([^\n]+)\n([\s\S]*?)Marks:\s*(\d+)\s*/\s*(\d+)'
+        section_matches = re.findall(section_pattern1, response, re.IGNORECASE)
 
-    # Pattern 2: **Section Name** ... Marks: X/Y
+    # ── Pattern C: **Section Name** ... Marks: X/Y ────────────────────────
     if not section_matches:
         section_pattern2 = r'\*\*([^\*\n]+)\*\*[:\s]*([\s\S]*?)Marks:\s*(\d+)\s*/\s*(\d+)'
         section_matches = re.findall(section_pattern2, response, re.IGNORECASE)
 
-    # Pattern 3: Section Name: ... Marks: X/Y (numbered list)
+    # ── Pattern D: numbered list ──────────────────────────────────────────
     if not section_matches:
         section_pattern3 = r'\d+\.\s*\*?\*?([^\n\*]+)\*?\*?[:\s]*([\s\S]*?)Marks:\s*(\d+)\s*/\s*(\d+)'
         section_matches = re.findall(section_pattern3, response, re.IGNORECASE)
@@ -657,7 +728,7 @@ def parse_evaluation_response(response: str) -> Dict[str, Any]:
         evaluations["total_marks"] += marks
         evaluations["max_marks"] += max_marks
 
-    # Also try to find individual "Marks: X/Y" patterns if no sections found
+    # Fallback: collect all individual Marks: X/Y if no sections matched
     if not evaluations["sections"]:
         marks_pattern = r'Marks:\s*(\d+)\s*/\s*(\d+)'
         marks_matches = re.findall(marks_pattern, response, re.IGNORECASE)
@@ -686,14 +757,17 @@ def parse_evaluation_response(response: str) -> Dict[str, Any]:
     if comments_section:
         evaluations["summary"] = comments_section.group(1).strip()
     else:
-        # Fallback to saving the full response
         evaluations["summary"] = response[:500] if len(response) > 500 else response
 
     return evaluations
 
 
 def format_evaluation_report(state: EvaluatorState) -> str:
-    """Format the final evaluation report."""
+    """Format the final evaluation report.
+
+    Returns the LLM-generated feedback as-is so it isn't double-wrapped.
+    A lightweight header with the score is prepended for context.
+    """
 
     # Calculate percentage safely
     if state['max_marks'] > 0:
@@ -701,22 +775,9 @@ def format_evaluation_report(state: EvaluatorState) -> str:
     else:
         percentage = 0
 
-    report = f"""# Student Submission Evaluation Report
-
-## Summary
-- **File:** {state['file_path']}
-- **Type:** {state['file_type'].upper()}
-- **Model Used:** {EvaluatorConfig().azure_deployment} (via Azure OpenAI)
-- **Total Score:** {state['total_marks']}/{state['max_marks']} ({percentage}%)
-
----
-
-## Detailed Evaluation
-
-{state['final_feedback']}
-"""
-
-    return report
+    # Return the raw LLM feedback — don't wrap it in another Markdown report
+    # that duplicates the section headers and confuses downstream rendering.
+    return state['final_feedback']
 
 
 # =============================================================================

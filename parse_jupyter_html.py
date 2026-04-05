@@ -18,8 +18,11 @@ def _extract_plain_html(soup, html_path, extract_images=True, output_file_path=N
     Fallback extractor for HTML files that are NOT Jupyter notebook exports.
     Pulls headings, paragraphs, code/pre blocks and list items into a clean
     markdown string so the LLM can evaluate any HTML submission.
+
+    Uses full recursive traversal so deeply-nested content is never missed.
     """
     sections = []
+    _seen_texts = set()  # deduplicate identical blocks
 
     # Remove script/style noise
     for tag in soup(["script", "style", "head", "nav", "footer"]):
@@ -27,43 +30,77 @@ def _extract_plain_html(soup, html_path, extract_images=True, output_file_path=N
 
     body = soup.find('body') or soup
 
-    # Walk top-level block elements in document order
-    block_tags = body.find_all(
-        ['h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-         'p', 'pre', 'code', 'ul', 'ol', 'table',
-         'section', 'article', 'main', 'div'],
-        recursive=False
-    )
+    # ── Leaf-content tags we always extract directly ──────────────────────
+    _LEAF_TAGS = {'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+                  'p', 'pre', 'code', 'ul', 'ol', 'table', 'li',
+                  'blockquote', 'figcaption', 'summary', 'details'}
 
-    # If no top-level blocks found, grab everything
-    if not block_tags:
-        block_tags = body.find_all(
-            ['h1', 'h2', 'h3', 'h4', 'p', 'pre', 'code', 'li']
-        )
+    # ── Container tags we recurse into instead of dumping whole text ──────
+    _CONTAINER_TAGS = {'div', 'section', 'article', 'main', 'aside',
+                       'header', 'figure', 'fieldset', 'form', 'span'}
 
-    chunk_index = 0
-    for tag in block_tags:
-        text = tag.get_text(separator=' ', strip=True)
-        if not text or len(text) < 5:
-            continue
+    def _process_tag(tag):
+        """Recursively walk the DOM tree and extract readable content."""
+        if tag.name is None:
+            return  # NavigableString — skip
 
         tag_name = tag.name
-        chunk_index += 1
 
-        if tag_name in ('h1', 'h2', 'h3', 'h4', 'h5', 'h6'):
-            level = '#' * int(tag_name[1])
-            sections.append(f"\n{level} {text}\n")
-        elif tag_name in ('pre', 'code'):
-            sections.append(f"\n```\n{text}\n```\n")
-        elif tag_name in ('ul', 'ol'):
-            items = [f"- {li.get_text(strip=True)}"
-                     for li in tag.find_all('li')]
-            if items:
-                sections.append("\n" + "\n".join(items) + "\n")
-        else:
-            # paragraph / div / generic block — only include if meaningful
-            if len(text) > 20:
-                sections.append(f"\n{text}\n")
+        if tag_name in _LEAF_TAGS:
+            text = tag.get_text(separator=' ', strip=True)
+            if not text or len(text) < 2:
+                return
+            # Deduplicate
+            sig = text[:120]
+            if sig in _seen_texts:
+                return
+            _seen_texts.add(sig)
+
+            if tag_name in ('h1', 'h2', 'h3', 'h4', 'h5', 'h6'):
+                level = '#' * int(tag_name[1])
+                sections.append(f"\n{level} {text}\n")
+            elif tag_name in ('pre', 'code'):
+                sections.append(f"\n```\n{text}\n```\n")
+            elif tag_name in ('ul', 'ol'):
+                items = [f"- {li.get_text(strip=True)}"
+                         for li in tag.find_all('li', recursive=True)]
+                if items:
+                    sections.append("\n" + "\n".join(items) + "\n")
+            elif tag_name == 'table':
+                # Extract table rows as a readable block
+                rows = []
+                for tr in tag.find_all('tr'):
+                    cells = [td.get_text(strip=True) for td in tr.find_all(['td', 'th'])]
+                    if cells:
+                        rows.append(" | ".join(cells))
+                if rows:
+                    sections.append("\n" + "\n".join(rows) + "\n")
+            elif tag_name == 'li':
+                # Only process if not already handled by a parent ul/ol
+                if tag.parent and tag.parent.name not in ('ul', 'ol'):
+                    sections.append(f"- {text}\n")
+            else:
+                # p, blockquote, figcaption, etc.
+                if len(text) > 5:
+                    sections.append(f"\n{text}\n")
+        elif tag_name in _CONTAINER_TAGS:
+            # Recurse into children instead of dumping container text
+            for child in tag.children:
+                if hasattr(child, 'name') and child.name:
+                    _process_tag(child)
+                elif hasattr(child, 'strip'):
+                    # Direct text node inside a container
+                    t = child.strip()
+                    if t and len(t) > 5:
+                        sig = t[:120]
+                        if sig not in _seen_texts:
+                            _seen_texts.add(sig)
+                            sections.append(f"\n{t}\n")
+
+    # Walk all children of body (full recursive via _process_tag)
+    for child in body.children:
+        if hasattr(child, 'name') and child.name:
+            _process_tag(child)
 
     full_text = "\n".join(sections).strip()
 
