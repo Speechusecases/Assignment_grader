@@ -1517,6 +1517,83 @@ def get_chat_ui_html():
             display: none;
         }
 
+        /* ============ Light Theme ============ */
+        body.light-theme {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f6f8fa;
+            --bg-tertiary: #eaeef2;
+            --bg-elevated: #d0d7de;
+            --border-primary: #d0d7de;
+            --border-secondary: #eaeef2;
+            --text-primary: #1f2328;
+            --text-secondary: #656d76;
+            --text-muted: #8b949e;
+            --accent-primary: #7c3aed;
+            --accent-secondary: #8b5cf6;
+            --success: #1a7f37;
+            --success-bg: rgba(26, 127, 55, 0.12);
+            --warning: #9a6700;
+            --warning-bg: rgba(154, 103, 0, 0.12);
+            --error: #cf222e;
+            --error-bg: rgba(207, 34, 46, 0.12);
+            --info: #0969da;
+            --info-bg: rgba(9, 105, 218, 0.12);
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.08);
+            --shadow-md: 0 4px 12px rgba(0,0,0,0.1);
+            --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
+        }
+
+        /* ============ Full-page Drag Overlay ============ */
+        .drag-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            z-index: 9999;
+            background: rgba(139, 92, 246, 0.12);
+            backdrop-filter: blur(4px);
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+        }
+        .drag-overlay.visible {
+            display: flex;
+        }
+        .drag-overlay-content {
+            padding: 48px 64px;
+            background: var(--bg-secondary);
+            border: 2px dashed var(--accent-primary);
+            border-radius: var(--radius-lg);
+            text-align: center;
+            box-shadow: var(--shadow-lg);
+            animation: dragPulse 1.5s ease-in-out infinite;
+        }
+        @keyframes dragPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.02); }
+        }
+        .drag-overlay-content i {
+            font-size: 48px;
+            color: var(--accent-primary);
+            margin-bottom: 16px;
+        }
+        .drag-overlay-content h3 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--text-primary);
+        }
+        .drag-overlay-content p {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        /* Info toast */
+        .toast.info {
+            border-color: var(--info);
+            background: var(--info-bg);
+        }
+        .toast.info .toast-icon { color: var(--info); }
+
         /* ============ Responsive ============ */
         @media (max-width: 1024px) {
             .sidebar {
@@ -1767,10 +1844,6 @@ def get_chat_ui_html():
                 <h1>Assignment Evaluator</h1>
             </div>
             <div class="header-actions">
-                <div class="model-pill">
-                    <span class="dot"></span>
-                    GPT via Azure OpenAI
-                </div>
                 <button class="header-btn" onclick="toggleTheme()" title="Toggle theme">
                     <i class="fas fa-moon"></i>
                 </button>
@@ -1778,46 +1851,16 @@ def get_chat_ui_html():
         </header>
 
         <div class="chat-container" id="chatContainer">
-            <!-- Welcome Screen -->
             <div class="welcome-screen" id="welcomeScreen">
                 <div class="welcome-icon">
                     <i class="fas fa-graduation-cap"></i>
                 </div>
-                <h2 class="welcome-title">AI-Powered Assignment Grading</h2>
-                <p class="welcome-subtitle">
-                    Upload a rubric and student submission, then let AI provide detailed feedback with marks for each section. Get instant, consistent evaluations.
-                </p>
-
-                <div class="feature-cards">
-                    <div class="feature-card">
-                        <i class="fas fa-bolt"></i>
-                        <h3>Instant Feedback</h3>
-                        <p>Get comprehensive evaluations in seconds with detailed breakdowns.</p>
-                    </div>
-                    <div class="feature-card">
-                        <i class="fas fa-balance-scale"></i>
-                        <h3>Consistent Grading</h3>
-                        <p>AI ensures fair and uniform assessment across all submissions.</p>
-                    </div>
-                    <div class="feature-card">
-                        <i class="fas fa-comments"></i>
-                        <h3>Ask Follow-ups</h3>
-                        <p>Chat with AI to clarify scores or get improvement suggestions.</p>
-                    </div>
-                </div>
+                <h2 class="welcome-title">Assignment Evaluator</h2>
 
                 <div class="quick-prompts">
                     <button class="quick-prompt" onclick="sendMessage('Evaluate this assignment')">
                         <i class="fas fa-play-circle"></i>
                         Evaluate Submission
-                    </button>
-                    <button class="quick-prompt" onclick="sendMessage('What are the main strengths of this work?')">
-                        <i class="fas fa-star"></i>
-                        Show Strengths
-                    </button>
-                    <button class="quick-prompt" onclick="sendMessage('What areas need improvement?')">
-                        <i class="fas fa-lightbulb"></i>
-                        Suggest Improvements
                     </button>
                     <button class="quick-prompt" onclick="sendMessage('Provide a summary of the evaluation')">
                         <i class="fas fa-file-alt"></i>
@@ -1835,10 +1878,10 @@ def get_chat_ui_html():
                 <div class="input-container">
                     <textarea
                         id="messageInput"
-                        placeholder="Ask me to evaluate the submission or ask follow-up questions..."
+                        placeholder="Ask a follow-up question..."
                         rows="1"
                         onkeydown="handleKeyDown(event)"
-                        oninput="autoResize(this); updateCharCount(this)"
+                        oninput="autoResize(this)"
                     ></textarea>
                     <div class="input-actions">
                         <button class="send-btn" id="sendBtn" onclick="sendMessage()">
@@ -1846,15 +1889,18 @@ def get_chat_ui_html():
                         </button>
                     </div>
                 </div>
-                <div class="input-footer">
-                    <span class="input-hint">
-                        <kbd>Enter</kbd> to send, <kbd>Shift + Enter</kbd> for new line
-                    </span>
-                    <span class="char-count" id="charCount"></span>
-                </div>
             </div>
         </div>
     </main>
+
+    <!-- Drag Overlay -->
+    <div class="drag-overlay" id="dragOverlay">
+        <div class="drag-overlay-content">
+            <i class="fas fa-cloud-upload-alt"></i>
+            <h3>Drop your file here</h3>
+            <p>Supports JSON/PDF rubrics and HTML/PDF submissions</p>
+        </div>
+    </div>
 
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
@@ -1873,8 +1919,15 @@ def get_chat_ui_html():
         window.onload = async function() {
             await createSession();
             setupDragAndDrop();
+            setupFullPageDragDrop();
             setupKeyboardShortcuts();
             checkResponsive();
+            // Restore saved theme
+            if (localStorage.getItem('theme') === 'light') {
+                document.body.classList.add('light-theme');
+                const icon = document.querySelector('.header-btn[onclick="toggleTheme()"] i');
+                if (icon) icon.className = 'fas fa-sun';
+            }
         };
 
         window.onresize = checkResponsive;
@@ -1942,6 +1995,76 @@ def get_chat_ui_html():
             });
         }
 
+        function setupFullPageDragDrop() {
+            let dragCounter = 0;
+            const overlay = document.getElementById('dragOverlay');
+
+            document.addEventListener('dragenter', (e) => {
+                e.preventDefault();
+                dragCounter++;
+                overlay.classList.add('visible');
+            });
+
+            document.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                dragCounter--;
+                if (dragCounter <= 0) {
+                    dragCounter = 0;
+                    overlay.classList.remove('visible');
+                }
+            });
+
+            document.addEventListener('dragover', (e) => {
+                e.preventDefault();
+            });
+
+            document.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dragCounter = 0;
+                overlay.classList.remove('visible');
+
+                const files = e.dataTransfer.files;
+                if (!files.length) return;
+
+                const file = files[0];
+                const ext = file.name.split('.').pop().toLowerCase();
+
+                // Route based on file type
+                if (ext === 'json') {
+                    // JSON is always a rubric
+                    const input = document.getElementById('rubricInput');
+                    const dt = new DataTransfer();
+                    dt.items.add(file);
+                    input.files = dt.files;
+                    input.dispatchEvent(new Event('change'));
+                } else if (ext === 'html') {
+                    // HTML is always a submission
+                    const input = document.getElementById('submissionInput');
+                    const dt = new DataTransfer();
+                    dt.items.add(file);
+                    input.files = dt.files;
+                    input.dispatchEvent(new Event('change'));
+                } else if (ext === 'pdf') {
+                    // PDF: if rubric not uploaded, treat as rubric; otherwise submission
+                    if (!rubricUploaded) {
+                        const input = document.getElementById('rubricInput');
+                        const dt = new DataTransfer();
+                        dt.items.add(file);
+                        input.files = dt.files;
+                        input.dispatchEvent(new Event('change'));
+                    } else {
+                        const input = document.getElementById('submissionInput');
+                        const dt = new DataTransfer();
+                        dt.items.add(file);
+                        input.files = dt.files;
+                        input.dispatchEvent(new Event('change'));
+                    }
+                } else {
+                    showToast('error', 'Unsupported File', `"${ext}" files are not supported. Use JSON, PDF, or HTML.`);
+                }
+            });
+        }
+
         async function uploadRubric(input) {
             if (!input.files.length) return;
 
@@ -1970,6 +2093,7 @@ def get_chat_ui_html():
                     document.getElementById('rubricDropZone').style.display = 'none';
                     document.getElementById('rubricFileInfo').style.display = 'flex';
                     document.getElementById('rubricFileName').textContent = file.name;
+                    document.getElementById('rubricFileName').title = file.name;
                     document.getElementById('rubricFileMeta').textContent = isPdf ? 'PDF converted successfully' : 'JSON loaded';
                     document.getElementById('rubricStatusIcon').className = 'file-status-icon success';
                     document.getElementById('rubricStatusIcon').innerHTML = '<i class="fas fa-check"></i>';
@@ -2013,6 +2137,7 @@ def get_chat_ui_html():
                     document.getElementById('submissionDropZone').style.display = 'none';
                     document.getElementById('submissionFileInfo').style.display = 'flex';
                     document.getElementById('submissionFileName').textContent = file.name;
+                    document.getElementById('submissionFileName').title = file.name;
                     document.getElementById('submissionFileMeta').textContent = file.name.endsWith('.pdf') ? 'PDF submission' : 'HTML submission';
                     document.getElementById('submissionStatusIcon').className = 'file-status-icon success';
                     document.getElementById('submissionStatusIcon').innerHTML = '<i class="fas fa-check"></i>';
@@ -2097,7 +2222,6 @@ def get_chat_ui_html():
             addMessage('user', message);
             input.value = '';
             autoResize(input);
-            updateCharCount(input);
 
             // Show loading
             isLoading = true;
@@ -2267,10 +2391,7 @@ def get_chat_ui_html():
             textarea.style.height = Math.min(textarea.scrollHeight, 150) + 'px';
         }
 
-        function updateCharCount(textarea) {
-            const count = textarea.value.length;
-            document.getElementById('charCount').textContent = count > 0 ? `${count} chars` : '';
-        }
+
 
         function setupKeyboardShortcuts() {
             document.addEventListener('keydown', (e) => {
@@ -2336,8 +2457,31 @@ def get_chat_ui_html():
             }, 2000);
         }
 
-        function regenerate() {
-            showToast('info', 'Coming Soon', 'Regeneration feature is in development');
+        async function regenerate() {
+            // Find the last user message and re-send it
+            const messages = document.querySelectorAll('#messagesContainer .message');
+            let lastUserText = null;
+            for (let i = messages.length - 1; i >= 0; i--) {
+                const avatar = messages[i].querySelector('.message-avatar');
+                if (avatar && avatar.classList.contains('user')) {
+                    lastUserText = messages[i].querySelector('.message-content').innerText;
+                    break;
+                }
+            }
+            if (!lastUserText) {
+                showToast('info', 'Nothing to regenerate', 'No previous message found');
+                return;
+            }
+            // Remove the last assistant message
+            for (let i = messages.length - 1; i >= 0; i--) {
+                const avatar = messages[i].querySelector('.message-avatar');
+                if (avatar && avatar.classList.contains('assistant')) {
+                    messages[i].remove();
+                    break;
+                }
+            }
+            // Re-send
+            await sendMessage(lastUserText);
         }
 
         // ============ Toast Notifications ============
@@ -2366,7 +2510,13 @@ def get_chat_ui_html():
         }
 
         function toggleTheme() {
-            showToast('info', 'Coming Soon', 'Theme toggle is in development');
+            const body = document.body;
+            const icon = document.querySelector('.header-btn[onclick="toggleTheme()"] i');
+            body.classList.toggle('light-theme');
+            const isLight = body.classList.contains('light-theme');
+            localStorage.setItem('theme', isLight ? 'light' : 'dark');
+            if (icon) icon.className = isLight ? 'fas fa-sun' : 'fas fa-moon';
+            showToast('success', 'Theme Changed', isLight ? 'Switched to light mode' : 'Switched to dark mode');
         }
     </script>
 </body>
